@@ -77,7 +77,13 @@ describe('start_sandbox', () => {
       { command: 'docker', image: 'example.com/qwen-code:latest' },
       [],
       undefined,
-      [process.execPath, '/path/to/cli.js', '--acp'],
+      [
+        process.execPath,
+        '/path/to/cli.js',
+        '--acp',
+        '--config-dir',
+        'relative-profile',
+      ],
       { [PRIVATE_ACP_CAPABILITY_ENV]: capability },
     );
 
@@ -106,6 +112,7 @@ describe('start_sandbox', () => {
         }),
       }),
     );
+    expect(args.at(-1)).not.toContain('--config-dir');
 
     child.emit('close', 0);
     await expect(result).resolves.toBe(0);

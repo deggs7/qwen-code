@@ -61,16 +61,20 @@ if (isTopLevelVersion && process.env['CLI_VERSION']) {
   process.exit(0);
 }
 
-const { existsSync, readFileSync, realpathSync, statSync } = await import(
-  'node:fs'
-);
+const {
+  accessSync,
+  constants,
+  existsSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+} = await import('node:fs');
 const { createHash } = await import('node:crypto');
 const { homedir, tmpdir } = await import('node:os');
 const { parseEnv } = await import('node:util');
 const { fileURLToPath, pathToFileURL } = await import('node:url');
-const { delimiter, dirname, join, parse, resolve, sep } = await import(
-  'node:path'
-);
+const { delimiter, dirname, isAbsolute, join, parse, resolve, sep } =
+  await import('node:path');
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const currentEntryPath = realpathSync(fileURLToPath(import.meta.url));
@@ -118,7 +122,36 @@ function preResolveQwenHome() {
   }
 }
 
+function resolveConfigDirForLauncher() {
+  let selected;
+  for (let i = 0; i < cliArgs.length; i++) {
+    const arg = cliArgs[i];
+    if (arg === '--') break;
+    if (arg === '--config-dir') {
+      const value = cliArgs[i + 1];
+      if (!value || value === '--' || value.startsWith('-')) return undefined;
+      selected = value;
+      i++;
+    } else if (arg.startsWith('--config-dir=')) {
+      const value = arg.slice('--config-dir='.length);
+      if (!value) return undefined;
+      selected = value;
+    }
+  }
+  if (!selected || !isAbsolute(selected)) return undefined;
+  try {
+    const canonical = realpathSync(selected);
+    if (!statSync(canonical).isDirectory()) return undefined;
+    accessSync(canonical, constants.R_OK | constants.W_OK | constants.X_OK);
+    return canonical;
+  } catch {
+    return undefined;
+  }
+}
+
 delete process.env['QWEN_CODE_MANAGED_NPM_UPDATE'];
+const configDirForLauncher = resolveConfigDirForLauncher();
+if (configDirForLauncher) process.env['QWEN_HOME'] = configDirForLauncher;
 preResolveQwenHome();
 
 function getManagedNpmPin() {

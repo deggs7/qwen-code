@@ -86,6 +86,19 @@ export const QUERY_POSITIONAL = {
 } as const satisfies PositionalOptions;
 
 export const TOP_LEVEL_GLOBAL_OPTIONS = {
+  'config-dir': {
+    type: 'string' as const,
+    requiresArg: true,
+    description:
+      'Use an existing, readable, and writable absolute directory as QWEN_HOME for this process. Selects settings, MCP servers, credentials, memory, skills, and extensions together.',
+    coerce: (value: unknown) => {
+      const selected = Array.isArray(value) ? value.at(-1) : value;
+      if (typeof selected !== 'string' || selected.length === 0) {
+        throw new Error('--config-dir requires a non-empty directory path.');
+      }
+      return selected;
+    },
+  },
   telemetry: {
     type: 'boolean' as const,
     description:

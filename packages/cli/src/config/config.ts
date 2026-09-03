@@ -582,6 +582,7 @@ export async function parseArguments(): Promise<CliArgs> {
     .locale('en')
     .scriptName('qwen')
     .usage(TOP_LEVEL_USAGE)
+    .option('config-dir', TOP_LEVEL_GLOBAL_OPTIONS['config-dir'])
     .option('telemetry', TOP_LEVEL_GLOBAL_OPTIONS.telemetry)
     .option('telemetry-target', TOP_LEVEL_GLOBAL_OPTIONS['telemetry-target'])
     .option(

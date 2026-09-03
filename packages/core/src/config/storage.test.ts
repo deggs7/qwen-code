@@ -576,6 +576,12 @@ describe('Storage – QWEN_HOME env var', () => {
     expect(Storage.getGlobalMemoryFilePath()).toBe(
       path.join(configDir, 'memory.md'),
     );
+    expect(Storage.getUserExtensionsDir()).toBe(
+      path.join(configDir, 'extensions'),
+    );
+    expect(new Storage('/tmp/project').getUserSkillsDirs()).toContain(
+      path.join(configDir, 'skills'),
+    );
   });
 
   it('project-level paths are NOT affected by QWEN_HOME', () => {

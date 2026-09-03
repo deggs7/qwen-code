@@ -5,7 +5,8 @@
  */
 
 /**
- * E2E integration tests for the QWEN_HOME environment variable.
+ * E2E integration tests for the QWEN_HOME configuration root and its
+ * --config-dir command-line adapter.
  *
  * These tests verify that when QWEN_HOME is set, all global config files
  * (installation_id, settings.json, memory.md, etc.) are routed to the
@@ -21,6 +22,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { TestRig } from '../test-helper.js';
+import { spawnDaemon } from './_daemon-harness.js';
 import {
   existsSync,
   mkdirSync,
@@ -361,6 +363,104 @@ describe('QWEN_HOME environment variable', () => {
         existsSync(runtimeInstallationId),
         `Did NOT expect installation_id inside QWEN_RUNTIME_DIR`,
       ).toBe(false);
+    });
+  });
+
+  describe('Group 5: --config-dir command-line flag', () => {
+    it('5a: selects the requested user settings profile and wins over QWEN_HOME', async () => {
+      await rig.setup('config-dir-5a-cli-profile');
+
+      const ambientConfigDir = join(rig.testDir!, 'ambient-config');
+      customConfigDir = join(rig.testDir!, 'selected-config');
+      mkdirSync(ambientConfigDir, { recursive: true });
+      mkdirSync(customConfigDir, { recursive: true });
+      process.env['QWEN_HOME'] = ambientConfigDir;
+
+      writeFileSync(
+        join(ambientConfigDir, 'settings.json'),
+        JSON.stringify({
+          $version: CURRENT_SETTINGS_VERSION,
+          mcpServers: {
+            'ambient-server': { command: 'missing-ambient-mcp-command' },
+          },
+        }),
+      );
+      writeFileSync(
+        join(customConfigDir, 'settings.json'),
+        JSON.stringify({
+          $version: CURRENT_SETTINGS_VERSION,
+          mcpServers: {
+            'selected-server': { command: 'missing-selected-mcp-command' },
+          },
+        }),
+      );
+
+      const output = await rig.runCommand([
+        'mcp',
+        '--config-dir',
+        customConfigDir,
+        'list',
+      ]);
+
+      expect(output).toContain('selected-server');
+      expect(output).not.toContain('ambient-server');
+    });
+
+    it('5b: applies the selected profile before daemon fast-path startup', async () => {
+      await rig.setup('config-dir-5b-daemon-profile');
+
+      const ambientConfigDir = join(rig.testDir!, 'ambient-config');
+      customConfigDir = join(rig.testDir!, 'selected-config');
+      mkdirSync(ambientConfigDir, { recursive: true });
+      mkdirSync(customConfigDir, { recursive: true });
+      writeFileSync(
+        join(ambientConfigDir, 'settings.json'),
+        JSON.stringify({
+          $version: CURRENT_SETTINGS_VERSION,
+          policy: { permissionStrategy: 'first-responder' },
+        }),
+      );
+      writeFileSync(
+        join(customConfigDir, 'settings.json'),
+        JSON.stringify({
+          $version: CURRENT_SETTINGS_VERSION,
+          policy: { permissionStrategy: 'local-only' },
+        }),
+      );
+
+      const daemon = await spawnDaemon({
+        workspaceCwd: rig.testDir!,
+        extraArgs: ['--config-dir', customConfigDir, '--no-web'],
+        env: { QWEN_HOME: ambientConfigDir },
+      });
+      try {
+        const response = await fetch(`${daemon.base}/capabilities`, {
+          headers: { Authorization: `Bearer ${daemon.token}` },
+        });
+        expect(response.status).toBe(200);
+        const capabilities = (await response.json()) as {
+          policy?: { permission?: unknown };
+        };
+        expect(capabilities.policy?.permission).toBe('local-only');
+      } finally {
+        await daemon.dispose();
+      }
+    });
+
+    it('5c: fails closed for relative and missing directories', async () => {
+      await rig.setup('config-dir-5c-invalid-paths');
+
+      await expect(
+        rig.runCommand(['--config-dir', 'relative-profile', 'mcp', 'list']),
+      ).rejects.toThrow('--config-dir must be an absolute path.');
+
+      const missing = join(rig.testDir!, 'missing-profile');
+      await expect(
+        rig.runCommand(['serve', '--config-dir', missing, '--no-web']),
+      ).rejects.toThrow(
+        '--config-dir must be an existing, readable, and writable directory',
+      );
+      expect(existsSync(missing)).toBe(false);
     });
   });
 });

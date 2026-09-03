@@ -568,6 +568,19 @@ describe('serve fast path argument parsing', () => {
     });
   });
 
+  it('keeps --config-dir on the fast path in both spellings', () => {
+    for (const argv of [
+      ['serve', '--config-dir', '/tmp/profile'],
+      ['serve', '--config-dir=/tmp/profile'],
+    ]) {
+      expect(parseServeFastPathArgs(argv)).toMatchObject({ kind: 'serve' });
+    }
+
+    expect(parseServeFastPathArgs(['serve', '--config-dir='])).toEqual({
+      kind: 'fallback',
+    });
+  });
+
   it('parses valid memory project scopes and falls back for invalid values', () => {
     expect(
       parseServeFastPathArgs(['serve', '--memory-project-scope', 'workspace']),

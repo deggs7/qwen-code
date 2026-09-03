@@ -24,6 +24,11 @@ import {
 } from './config/top-level-options.js';
 import { clearInheritedPeerMessagingEnv } from './peerMessaging/env.js';
 import { normalizeServeFastPathArgv } from './utils/serve-fast-path-argv.js';
+import {
+  applyConfigDirFromArgs,
+  ConfigDirError,
+  stripConfigDirFromArgs,
+} from './config/config-dir-flag.js';
 import { initStartupProfiler } from './utils/startupProfiler.js';
 import { initCpuProfiler } from './utils/cpuProfiler.js';
 import {
@@ -410,7 +415,7 @@ async function printBootstrapVersion(): Promise<void> {
 
 async function runMcpFastPath(rawArgv: readonly string[]): Promise<void> {
   const argv: readonly string[] = normalizeMcpFastPathArgv(
-    normalizeServeFastPathArgv(rawArgv),
+    normalizeServeFastPathArgv(stripConfigDirFromArgs(rawArgv)),
   );
   const hasSubcommand = argv.length > 1 && !argv[1]!.startsWith('-');
   if (!hasSubcommand) {
@@ -503,6 +508,8 @@ export async function runCliEntry(
   // carve-out, this one does not.
   clearInheritedPeerMessagingEnv();
 
+  applyConfigDirFromArgs(rawArgv);
+
   const managedUpdateVersion =
     process.env['QWEN_CODE_MANAGED_NPM_UPDATE_VERSION'];
   if (managedUpdateVersion) {
@@ -556,6 +563,12 @@ export async function runCliEntry(
 }
 
 export async function handleCriticalError(error: unknown): Promise<void> {
+  if (error instanceof ConfigDirError) {
+    writeStderrLine(`Error: ${error.message}`);
+    process.exit(1);
+    return;
+  }
+
   const [{ FatalError }, { AlreadyReportedError }] = await Promise.all([
     import('./utils/deferred-core-runtime.js'),
     import('./utils/errors.js'),

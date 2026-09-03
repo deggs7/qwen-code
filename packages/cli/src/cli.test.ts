@@ -25,6 +25,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { FatalError } from '@qwen-code/qwen-code-core';
 import { AlreadyReportedError } from './utils/errors.js';
+import { ConfigDirError } from './config/config-dir-flag.js';
 import { TOP_LEVEL_HELP_OPTIONS } from './config/top-level-options.js';
 import {
   MCP_COMMANDS,
@@ -145,6 +146,9 @@ describe('resolveBootstrapRoute', () => {
   });
 
   it('does not treat values for global flags as positional commands or bootstrap flags', () => {
+    expect(
+      resolveBootstrapRoute(['--config-dir', 'profiles/research', '--help']),
+    ).toBe('help');
     expect(resolveBootstrapRoute(['--model', 'gpt-4', '--help'])).toBe('help');
     expect(resolveBootstrapRoute(['-p', 'hello', '--help'])).toBe('help');
     expect(resolveBootstrapRoute(['--approval-mode', 'auto', '--help'])).toBe(
@@ -680,6 +684,7 @@ describe('runCliEntry', () => {
       process.env['QWEN_CODE_MANAGED_NPM_UPDATE_VERSION'],
     QWEN_CODE_MESSAGING_SOCKET: process.env['QWEN_CODE_MESSAGING_SOCKET'],
     QWEN_CODE_MESSAGING_TOKEN: process.env['QWEN_CODE_MESSAGING_TOKEN'],
+    QWEN_HOME: process.env['QWEN_HOME'],
   };
 
   let stdout: string[];
@@ -732,6 +737,7 @@ describe('runCliEntry', () => {
     for (const name of [
       'QWEN_CODE_MESSAGING_SOCKET',
       'QWEN_CODE_MESSAGING_TOKEN',
+      'QWEN_HOME',
     ] as const) {
       if (savedEnv[name] === undefined) {
         delete process.env[name];
@@ -750,6 +756,49 @@ describe('runCliEntry', () => {
     expect(mocks.tryRunServeFastPath).not.toHaveBeenCalled();
     expect(mocks.initStartupProfiler).not.toHaveBeenCalled();
     expect(mocks.initCpuProfiler).not.toHaveBeenCalled();
+  });
+
+  it('applies --config-dir before dispatching CLI and serve startup', async () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'qwen-config-dir-entry-'));
+    const cliDir = path.join(root, 'cli');
+    const serveDir = path.join(root, 'serve');
+    const mcpDir = path.join(root, 'mcp');
+    mkdirSync(cliDir);
+    mkdirSync(serveDir);
+    mkdirSync(mcpDir);
+
+    try {
+      mocks.main.mockImplementationOnce(async () => {
+        expect(process.env['QWEN_HOME']).toBe(realpathSync(cliDir));
+      });
+      await runCliEntry(['--config-dir', cliDir]);
+
+      mocks.tryRunServeFastPath.mockImplementationOnce(async () => {
+        expect(process.env['QWEN_HOME']).toBe(realpathSync(serveDir));
+        return true;
+      });
+      await runCliEntry(['serve', `--config-dir=${serveDir}`]);
+
+      await runCliEntry(['mcp', '--config-dir', mcpDir, 'list']);
+      expect(process.env['QWEN_HOME']).toBe(realpathSync(mcpDir));
+      expect(mocks.mcpListHandler).toHaveBeenCalledTimes(1);
+      expect(mocks.main).toHaveBeenCalledTimes(1);
+      expect(mocks.tryRunServeFastPath).toHaveBeenCalledTimes(1);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('fails before dispatch when --config-dir is invalid', async () => {
+    const inherited = process.env['QWEN_HOME'];
+
+    await expect(
+      runCliEntry(['serve', '--config-dir', 'relative/profile']),
+    ).rejects.toThrow('--config-dir must be an absolute path.');
+
+    expect(process.env['QWEN_HOME']).toBe(inherited);
+    expect(mocks.main).not.toHaveBeenCalled();
+    expect(mocks.tryRunServeFastPath).not.toHaveBeenCalled();
   });
 
   it('runs a managed update worker without starting the CLI', async () => {
@@ -1839,6 +1888,14 @@ describe('bootstrap error handling', () => {
     ).rejects.toThrow('process.exit:7');
 
     expect(stderr.join('')).toBe('');
+  });
+
+  it('prints config directory validation errors without a stack', async () => {
+    await expect(
+      handleCriticalError(new ConfigDirError('invalid config directory')),
+    ).rejects.toThrow('process.exit:1');
+
+    expect(stderr.join('')).toBe('Error: invalid config directory\n');
   });
 
   it('prints unexpected errors with the generic critical header', async () => {

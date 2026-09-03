@@ -35,6 +35,7 @@ import {
   QWEN_CODE_DESKTOP_ENV,
   QWEN_CODE_SERVE_ENV,
 } from '../config/acp-channel-fallback.js';
+import { stripConfigDirFromArgs } from '../config/config-dir-flag.js';
 
 const execAsync = promisify(exec);
 
@@ -826,7 +827,9 @@ export async function start_sandbox(
   // Determine if the current user's UID/GID should be passed to the sandbox.
   // See shouldUseCurrentUserInSandbox for more details.
   let userFlag = '';
-  const finalEntrypoint = entrypoint(workdir, cliArgs);
+  // The selected root is already canonicalized, mounted, and passed through
+  // QWEN_HOME above. Do not let the child re-resolve a relative host flag.
+  const finalEntrypoint = entrypoint(workdir, stripConfigDirFromArgs(cliArgs));
 
   // Check if we should use current user's UID/GID in sandbox
   // In integration test mode, we still respect SANDBOX_SET_UID_GID to allow

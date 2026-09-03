@@ -459,6 +459,13 @@ export function parseServeFastPathArgs(
       continue;
     }
 
+    if (flag === 'config-dir') {
+      const read = readOptionValue(argv, i, inlineValue);
+      if (!read || read.value === '') return { kind: 'fallback' };
+      i = read.nextIndex;
+      continue;
+    }
+
     return { kind: 'fallback' };
   }
 

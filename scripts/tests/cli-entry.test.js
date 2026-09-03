@@ -5,7 +5,15 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+} from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 
 const { spawnSyncMock, existsSyncMock, homedirMock, tmpdirMock } = vi.hoisted(
   () => ({
@@ -220,6 +228,45 @@ describe('scripts/cli-entry.js production entry', () => {
     } finally {
       if (inheritedHome === undefined) delete process.env.QWEN_HOME;
       else process.env.QWEN_HOME = inheritedHome;
+    }
+  });
+
+  it('uses --config-dir before selecting the managed npm update root', async () => {
+    const inheritedHome = process.env.QWEN_HOME;
+    const inheritedRoot = process.env.QWEN_CODE_MANAGED_NPM_ROOT;
+    const inheritedPin = process.env.QWEN_CODE_MANAGED_NPM_PIN;
+    const configDir = realpathSync(
+      mkdtempSync(join(tmpdir(), 'qwen-entry-config-dir-')),
+    );
+    const nested = join(configDir, 'profile');
+    mkdirSync(nested);
+    process.argv = [
+      'node',
+      'scripts/cli-entry.js',
+      'review',
+      '--config-dir',
+      nested,
+      'check',
+    ];
+    delete process.env.QWEN_HOME;
+    delete process.env.QWEN_CODE_MANAGED_NPM_PIN;
+
+    try {
+      await import('../cli-entry.js?config-dir-before-managed-root');
+      expect(process.env.QWEN_HOME).toBe(nested);
+      expect(normalizePath(process.env.QWEN_CODE_MANAGED_NPM_ROOT)).toBe(
+        `${normalizePath(nested)}/updates/npm`,
+      );
+    } finally {
+      rmSync(configDir, { recursive: true, force: true });
+      if (inheritedHome === undefined) delete process.env.QWEN_HOME;
+      else process.env.QWEN_HOME = inheritedHome;
+      if (inheritedRoot === undefined)
+        delete process.env.QWEN_CODE_MANAGED_NPM_ROOT;
+      else process.env.QWEN_CODE_MANAGED_NPM_ROOT = inheritedRoot;
+      if (inheritedPin === undefined)
+        delete process.env.QWEN_CODE_MANAGED_NPM_PIN;
+      else process.env.QWEN_CODE_MANAGED_NPM_PIN = inheritedPin;
     }
   });
 });
